@@ -10,6 +10,7 @@ def call(Map config = [:]) {
         environment {
             DOCKER_IMAGE = "${config.dockerImage}"
             APP_DIR = "${config.appDir ?: 'app'}"
+            GIT_BRANCH = "${config.gitBranch ?: 'master'}"
         }
 
         stages {

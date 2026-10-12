@@ -62,26 +62,38 @@ class PipelineSteps implements Serializable {
     }
 
     def commitAndPushVersion(Map config, String appDir) {
-        script.withCredentials([
-            script.usernamePassword(
-                credentialsId: config.gitCredentials ?: 'github-creds',
-                usernameVariable: 'GIT_USER',
-                passwordVariable: 'GIT_TOKEN'
-            )
-        ]) {
-            script.sh '''
-                set +x
-                git config user.name "Jenkins"
-                git config user.email "jenkins@example.com"
-                git add "$APP_DIR/package.json" "$APP_DIR/package-lock.json"
-                git commit -m "Bump app version" || echo "No changes to commit"
-            '''
+    script.withCredentials([
+        script.usernamePassword(
+            credentialsId: config.gitCredentials ?: 'github-creds',
+            usernameVariable: 'GIT_USER',
+            passwordVariable: 'GIT_TOKEN'
+        )
+    ]) {
+        script.sh '''
+            set +x
+            git config user.name "Jenkins"
+            git config user.email "jenkins@example.com"
 
-            // Push mit Jenkins-Git-Credentials statt Token in der URL.
-            script.sshagent([config.sshCredentials ?: 'github-ssh']) {
-                script.sh "git push origin HEAD:${config.gitBranch ?: 'master'}"
-            }
-        }
+            git add "$APP_DIR/package.json" "$APP_DIR/package-lock.json"
+            git commit -m "Bump app version" || echo "No changes to commit"
+
+            export GIT_TERMINAL_PROMPT=0
+            ASKPASS_FILE="$(mktemp)"
+            trap 'rm -f "$ASKPASS_FILE"' EXIT
+
+            cat > "$ASKPASS_FILE" <<'EOF'
+#!/bin/sh
+case "$1" in
+  *Username*) printf '%s\\n' "$GIT_USER" ;;
+  *Password*) printf '%s\\n' "$GIT_TOKEN" ;;
+esac
+EOF
+            chmod 700 "$ASKPASS_FILE"
+            export GIT_ASKPASS="$ASKPASS_FILE"
+
+            git push origin "HEAD:$GIT_BRANCH"
+        '''
     }
+}
 }
 
