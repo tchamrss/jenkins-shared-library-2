@@ -2,7 +2,7 @@
 import org.devops.PipelineSteps
 
 def call(Map config = [:]) {
-    def steps = new PipelineSteps(this)
+    def pipelineSteps = new PipelineSteps(this)
 
     pipeline {
         agent any
@@ -17,7 +17,7 @@ def call(Map config = [:]) {
             stage('Checkout') {
                 steps {
                     script {
-                        steps.checkoutCode(config)
+                        pipelineSteps.checkoutCode(config)
                     }
                 }
             }
@@ -25,7 +25,7 @@ def call(Map config = [:]) {
             stage('Increment Version') {
                 steps {
                     script {
-                        steps.incrementVersion(APP_DIR)
+                        pipelineSteps.incrementVersion(APP_DIR)
                     }
                 }
             }
@@ -33,7 +33,7 @@ def call(Map config = [:]) {
             stage('Test') {
                 steps {
                     script {
-                        steps.runTests(APP_DIR)
+                        pipelineSteps.runTests(APP_DIR)
                     }
                 }
             }
@@ -41,7 +41,7 @@ def call(Map config = [:]) {
             stage('Build Docker Image') {
                 steps {
                     script {
-                        steps.buildDockerImage(APP_DIR, DOCKER_IMAGE)
+                        pipelineSteps.buildDockerImage(APP_DIR, DOCKER_IMAGE)
                     }
                 }
             }
@@ -49,7 +49,7 @@ def call(Map config = [:]) {
             stage('Push to Docker Hub') {
                 steps {
                     script {
-                        steps.pushDockerImage(
+                        pipelineSteps.pushDockerImage(
                             DOCKER_IMAGE,
                             config.dockerCredentials ?: 'dockerhub-creds'
                         )
@@ -60,7 +60,7 @@ def call(Map config = [:]) {
             stage('Commit and Push Version') {
                 steps {
                     script {
-                        steps.commitAndPushVersion(config, APP_DIR)
+                        pipelineSteps.commitAndPushVersion(config, APP_DIR)
                     }
                 }
             }
