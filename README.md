@@ -60,7 +60,7 @@ To install applications directly matching your container's architecture layout:
    ```
 4. Download and process the Node Source distribution script, then complete installation:
    ```bash
-   curl -sL https://nodesource.com -o nodesource_setup.sh
+   curl -fsSL https://deb.nodesource.com/setup_lts.x -o nodesource_setup.sh
    bash nodesource_setup.sh
    apt install -y nodejs
    ```
@@ -97,7 +97,8 @@ Enter the container as root and deploy the official installation package:
 docker exec -u 0 -it <CONTAINER_ID> bash
 
 # Install the client CLI tool
-curl https://docker.com > dockerinstall && chmod +x dockerinstall && ./dockerinstall
+
+ curl https://get.docker.com/ > dockerinstall && chmod +x dockerinstall && ./dockerinstall
 ```
 
 ### Step 3: Configure Socket Permissions
@@ -106,6 +107,7 @@ Grant the default `jenkins` non-root internal container user read/write access p
 chmod 666 /var/run/docker.sock
 ls -l /var/run/docker.sock
 ```
+this will give every container user full Docker access
 Exit out of the root session. You can now re-enter as the regular user to test local workflows:
 ```bash
 docker exec -it <CONTAINER_ID> bash
@@ -134,11 +136,11 @@ Because insecure external endpoints using raw HTTP connections are blocked by de
    ```json
    {
      "insecure-registries": [
-       "###.###.###.###:8081"
+       "###.###.###.###:8082"
      ]
    }
    ```
-3. Save, close out the editor, and restart the host engine processing runtime:
+3. Save, close out the editor, and restart Docker:
    ```bash
    sudo systemctl restart docker
    ```
@@ -146,7 +148,7 @@ Because insecure external endpoints using raw HTTP connections are blocked by de
    ```bash
    docker start <CONTAINER_ID>
    ```
-5. **Important:** Remember to reset socket file access configurations inside the freshly initialized context framework:
+5. **Important:** Remember to reset socket file access configurations inside the new container:
    ```bash
    docker exec -u 0 -it <CONTAINER_ID> bash
    chmod 666 /var/run/docker.sock
@@ -251,14 +253,390 @@ pipeline {
 * Default built-in global parameters are queryable here: `http://###.###.###.###:8080/env-vars.html/`
 * Use `withCredentials` to bind parameters safely inside specific execution phases. Ensure both the **Credentials Binding Plugin** and the **Credentials Plugin** are installed.
 
+
+### Stage-scoped Credentials
+
+Another way to deal with credentials is to collect them in a stage when they are only needed there:
+
+```groovy
+stage('deploy') {
+            steps{
+                echo 'deploying the application'
+		withCredentials([
+			usernamePassword(credentials: 'git-credentials', usernameVariable: USER, 				passwordVariable: PWD)
+
+			]){
+			    sh "some script ${USER} ${PWD}"
+
+		}
+            }
+        }
+
+```
+
+To use this method, we need two plugins: **Credentials Binding Plugin** and **Credentials Plugin**.
+
+### Tools
+
+```groovy
+
+Tools {
+     maven "maven-3.9"
+    
+}
+```
+
+```groovy
+stages {
+        stage('build') { // for display purposes
+            steps{
+                echo 'Building the application'
+		sh "mvn install"
+            }
+        }
+}
+
+```
+
+### Parameters
+
+```groovy
+
+pipeline {
+    parameters {
+    	
+    	choice(name: 'VERSION', choices: ['1.1.0','1.2.0','1.3.0'], description: '')
+    	booleanParam(name: 'executeTests', defaultValue: true, description: '')
+    }
+    agent any
+    stages {
+        stage('build') { // for display purposes
+            steps{
+                echo 'Building the application'
+            }
+        }
+        stage('test') {
+    	    when {
+        		expression {
+        		    params.executeTests == true
+        		}
+    	    }
+            steps{
+                echo 'testing the application'
+                
+            }
+        }
+
+        stage('deploy') {
+        	    
+                    steps{
+                        echo 'deploying the application'
+        		echo "deploying version ${params.VERSION}"
+                        
+                    }
+        }
+    }
+}
+
+
+```
+
+### Loading a Script
+
+Create a script called `script.groovy` containing:
+
+```groovy
+def buildApp(){
+	echo 'building the application'
+}
+return this
+
+def testdApp(){
+	echo 'testing the application'
+}
+return this
+
+def deployApp(){
+	echo 'deploying the application'
+        echo "deploying version ${params.VERSION}"
+}
+return this
+
+```
+
+```groovy
+def gv
+pipeline {
+    parameters {
+    	
+    	choice(name: 'VERSION', choices: ['1.1.0','1.2.0','1.3.0'], description: '')
+    	booleanParam(name: 'executeTests', defaultValue: true, description: '')
+    }
+    agent any
+    stages {
+
+	stage('init') { // for display purposes
+            steps{
+		script{
+		    gv = load "script.groovy"
+		}
+                
+            }
+        }
+
+        stage('build') { // for display purposes
+            steps{
+                script{
+		    gv.buildApp()
+		}
+            }
+        }
+        stage('test') {
+    	    when {
+        		expression {
+        		    params.executeTests == true
+        		}
+    	    }
+            steps{
+                script{
+		    gv.testApp()
+		}
+                
+            }
+        }
+
+        stage('deploy') {
+        	    
+                    steps{
+                        script{
+		    		gv.deploydApp()
+			}	
+                        
+                    }
+        }
+    }
+}
+
+
+
+
+```
+
+### Input Parameters
+
+
+```groovy
+pipeline {
+    parameters {
+    	
+    	choice(name: 'VERSION', choices: ['1.1.0','1.2.0','1.3.0'], description: '')
+    	booleanParam(name: 'executeTests', defaultValue: true, description: '')
+    }
+    agent any
+    stages {
+
+	stage('init') { // for display purposes
+            steps{
+		script{
+		    gv = load "script.groovy"
+		}
+                
+            }
+        }
+
+        stage('build') { // for display purposes
+            steps{
+                script{
+		    gv.buildApp()
+		}
+            }
+        }
+        stage('test') {
+    	    when {
+        		expression {
+        		    params.executeTests == true
+        		}
+    	    }
+            steps{
+                script{
+		    gv.testApp()
+		}
+                
+            }
+        }
+
+        stage('deploy') {
+		    input{
+			message "Select the environment to deploy to"
+			ok "Done"
+			parameters {
+    	
+    			     choice(name: 'ENV', choices: ['dev','staging','prod'], description: '')
+   
+   		 	}
+		    }
+		    	
+        	    
+                    steps{
+                        script{
+		    		gv.deploydApp()
+				echo "deploying to ${ENV}"
+			}	
+                        
+                    }
+        }
+    }
+}
+
+
+
+
+```
+
+Another way to request an input parameter:
+
+```groovy
+script{
+		    		env.ENV input message "Select the environment to deploy to", ok "Done", parameters: [choice(name: 'ONE', choices: ['dev','staging','prod'], description: '')]
+				gv.deploydApp()
+				echo "deploying to ${ENV}"
+			}	
+```
+
+
+
+### Complete Pipeline
+
+
+```groovy
+def gv
+
+pipeline {
+    agent any
+    tools {
+        maven 'maven-3.9'
+    }
+    stages {
+        stage(' init') {
+            steps {
+                script {
+                    gv = load "script.groovy"
+                }
+            }
+        }
+        stage('Checkout') {
+            steps {
+                git 'https://gitlab.com/twn-devops-bootcamp/latest/08-jenkins/java-maven-app.git'
+            }
+        }
+
+        stage('build jar') { 
+            steps{
+                script {
+                    echo 'Building the application'
+                    sh 'mvn package'
+                }
+            }
+        }
+        stage('build image') { 
+            steps{
+                script {
+                    echo 'Building the docker image'
+                    withCredentials([usernamePassword(credentialsId: 'docker-hub-repo', passwordVariable: 'DOCKER_HUB_PASSWORD', usernameVariable: 'DOCKER_HUB_USERNAME')]) {
+                        sh 'docker build -t tchamrss/demo-app:jma-2.0 .'
+                        sh 'echo $DOCKER_HUB_PASSWORD | docker login -u $DOCKER_HUB_USERNAME --password-stdin'
+                        sh 'docker push tchamrss/demo-app:jma-2.0'
+                    }
+                }
+            }
+        }
+        
+        stage('deploy') {
+            steps{
+                script {
+                    echo 'deploying the application'
+                }
+            }
+        }
+    }
+}
+
+
+```
+
+### Multibranch Pipeline
+
+
 ```groovy
 pipeline {
     agent any
-    environment {
-        NEW_VERSION = '1.3.0'
-        SERVER_CREDENTIALS = credentials('git-credentials')
-    }
+    
     stages {
-        stage('Build') {
+        stage('test') {
+            steps{
+                echo 'testing the application'
+                echo "executing pipeline for branch: $BRANCH_NAME"
+                
+            }
+        }
+        stage('build') { // for display purposes
+            when {
+                expression { 
+                    BRANCH_NAME == 'master'
+                 }
+            }
+            steps{
+                echo 'Building the application'
+            }
+        }
+        
+        stage('deploy') {
+            when {
+                expression { 
+                    BRANCH_NAME == 'master'
+                 }
+            }
+            steps{
+                echo 'deploying the application'
+            }
+        }
+    }
+}
+
+
+```
+
+### Jenkins Credentials
+
+- **System credentials** are available only to the Jenkins server.
+- **Global credentials** are available to all pipelines.
+- **Project/pipeline credentials** are available only to the project or pipeline.
+
+
+### Jenkins Shared Library
+
+Benefits include code reusability, easy maintenance, faster pipeline creation, consistency and standardization, and improved collaboration.
+
+1. **Create the shared library**
+   - Create a Groovy project in the IDE.
+   - Add a `vars` folder and a Groovy script inside it.
+   - Create a GitHub repository and push the Groovy project to it.
+
+2. **Make the shared library available in Jenkins**
+   - In Manage Jenkins, under System, add the shared library as a global library.
+
+3. **Use the shared library in the Jenkinsfile.**
+```groovy
+@Library('jenkins-shared-library') _
+
+pipeline {
+    agent any
+    stages {
+        stage('build') {
             steps {
-                echo "Building version ${env.NEW_VERSION}"
+                buildApp()
+            }
+        }
+    }
+}
+```
